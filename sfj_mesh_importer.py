@@ -1,5 +1,20 @@
 import bpy
 import struct
+from dataclasses import dataclass
+from typing import List, Tuple
+
+@dataclass
+class VertInfluences:
+    influences: Tuple[int, int, int, int]
+    weights: Tuple[float, float, float, float]
+
+@dataclass
+class AnimVertex:
+    pos: Tuple[float, float, float]
+    norm: Tuple[float, float, float]
+    tan: Tuple[float, float, float]
+    texCoords: Tuple[float, float]
+    influences: VertInfluences
 
 class MeshImportProperties(bpy.types.PropertyGroup):
     filepath: bpy.props.StringProperty(
@@ -36,12 +51,39 @@ class MESH_OT_ImportSFJ(bpy.types.Operator):
         return {'FINISHED'}
 
     def __load_sfj_mesh(self, filepath):
-        vertices = []
+        vertices: List[AnimVertex] = []
         faces = []
 
         with open(filepath, "rb") as file:
             numTextures = struct.unpack('<I', file.read(4))[0]
             self.report({'INFO'}, f"The number of textures is: {numTextures}")
+
+            numVerts = struct.unpack('<I', file.read(4))[0]
+            self.report({'INFO'}, f"The number of verts is: {numVerts}")
+
+            for i in range(numVerts):
+                posx, posy, posz = struct.unpack("<fff", file.read(12))
+                normx, normy, normz = struct.unpack("<fff", file.read(12))
+                tanx, tany, tanz = struct.unpack("<fff", file.read(12))
+                texu, texv = struct.unpack("<ff", file.read(8))
+
+                boneInfluences: List[int] = []
+                boneWeights: List[float] = []
+
+                for curInfluence in range(4):
+                    boneInfluences.append(struct.unpack("<I", file.read(4))[0])
+                    boneWeights.append(struct.unpack("<f", file.read(4))[0])
+
+                vertices.append(AnimVertex(
+                    pos=(posx, posy, posz),
+                    norm=(normx, normy, normz),
+                    tan=(tanx, tany, tanz),
+                    texCoords=(texu, texv),
+                    influences=VertInfluences(
+                        influences=(boneInfluences[0], boneInfluences[1], boneInfluences[2], boneInfluences[3]),
+                        weights=(boneWeights[0], boneWeights[1], boneWeights[2], boneWeights[3])
+                    )
+                ))
 
 classes = [MeshImportProperties, MESH_PT_SFJImporter, MESH_OT_ImportSFJ]
 
