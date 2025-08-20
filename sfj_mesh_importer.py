@@ -16,6 +16,11 @@ class AnimVertex:
     texCoords: Tuple[float, float]
     influences: VertInfluences
 
+@dataclass
+class AnimModel:
+    vertices: List[AnimVertex]
+    faces: list[list[int]]
+
 class MeshImportProperties(bpy.types.PropertyGroup):
     filepath: bpy.props.StringProperty(
         name="Mesh File",
@@ -46,10 +51,11 @@ class MESH_OT_ImportSFJ(bpy.types.Operator):
         filepath = props.filepath
 
         self.report({'INFO'}, f"Importing SFJ mesh from: {filepath}")
-        self.__load_sfj_mesh(filepath)
+        model = self.__load_sfj_mesh(filepath)
+        self.__add_mesh("SFJMesh", model)
         return {'FINISHED'}
 
-    def __load_sfj_mesh(self, filepath):
+    def __load_sfj_mesh(self, filepath) -> AnimModel:
         vertices: List[AnimVertex] = []
         faces = []
 
@@ -88,12 +94,18 @@ class MESH_OT_ImportSFJ(bpy.types.Operator):
             indices = list(struct.unpack(f"<{numFaces * 3}I", file.read(4 * numFaces * 3)))
             faces = [indices[i:i+3] for i in range(0, len(indices), 3)]
 
-        positions = list(map(lambda v: v.pos, vertices))
-        mesh = bpy.data.meshes.new("SFJMesh")
-        mesh.from_pydata(positions, [], faces)
+        return AnimModel(
+            vertices=vertices,
+            faces=faces
+        )
+
+    def __add_mesh(self, name: str, model: AnimModel):
+        positions = list(map(lambda v: v.pos, model.vertices))
+        mesh = bpy.data.meshes.new(name)
+        mesh.from_pydata(positions, [], model.faces)
         mesh.update()
 
-        obj = bpy.data.objects.new("SFJMesh", mesh)
+        obj = bpy.data.objects.new(name, mesh)
         bpy.context.collection.objects.link(obj)
         bpy.context.view_layer.objects.active = obj
         obj.select_set(True)
