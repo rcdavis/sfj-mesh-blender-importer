@@ -5,8 +5,8 @@ from typing import List, Tuple
 
 @dataclass
 class VertInfluences:
-    influences: Tuple[int, int, int, int]
-    weights: Tuple[float, float, float, float]
+    influences: List[int]
+    weights: List[float]
 
 @dataclass
 class AnimVertex:
@@ -15,6 +15,11 @@ class AnimVertex:
     tan: Tuple[float, float, float]
     texCoords: Tuple[float, float]
     influences: VertInfluences
+
+@dataclass
+class AnimModel:
+    vertices: List[AnimVertex]
+    faces: list[list[int]]
 
 class MeshImportProperties(bpy.types.PropertyGroup):
     filepath: bpy.props.StringProperty(
@@ -45,21 +50,19 @@ class MESH_OT_ImportSFJ(bpy.types.Operator):
         props = context.scene.mesh_importer_props
         filepath = props.filepath
 
-        # Call your mesh loading logic here
         self.report({'INFO'}, f"Importing SFJ mesh from: {filepath}")
-        self.__load_sfj_mesh(filepath)
+        model = self.__load_sfj_mesh(filepath)
+        self.__add_mesh("SFJMesh", model)
         return {'FINISHED'}
 
-    def __load_sfj_mesh(self, filepath):
+    def __load_sfj_mesh(self, filepath) -> AnimModel:
         vertices: List[AnimVertex] = []
         faces = []
 
         with open(filepath, "rb") as file:
             numTextures = struct.unpack('<I', file.read(4))[0]
-            self.report({'INFO'}, f"The number of textures is: {numTextures}")
 
             numVerts = struct.unpack('<I', file.read(4))[0]
-            self.report({'INFO'}, f"The number of verts is: {numVerts}")
 
             for i in range(numVerts):
                 posx, posy, posz = struct.unpack("<fff", file.read(12))
@@ -67,12 +70,14 @@ class MESH_OT_ImportSFJ(bpy.types.Operator):
                 tanx, tany, tanz = struct.unpack("<fff", file.read(12))
                 texu, texv = struct.unpack("<ff", file.read(8))
 
-                boneInfluences: List[int] = []
-                boneWeights: List[float] = []
+                numInfluences = struct.unpack('<I', file.read(4))[0]
 
-                for curInfluence in range(4):
-                    boneInfluences.append(struct.unpack("<I", file.read(4))[0])
-                    boneWeights.append(struct.unpack("<f", file.read(4))[0])
+                boneInfluences = [0] * numInfluences
+                boneWeights = [0.0] * numInfluences
+                for curInfluence in range(numInfluences):
+                    influence, weight = struct.unpack("<If", file.read(8))
+                    boneInfluences[curInfluence] = influence
+                    boneWeights[curInfluence] = weight
 
                 vertices.append(AnimVertex(
                     pos=(posx, posy, posz),
@@ -80,10 +85,30 @@ class MESH_OT_ImportSFJ(bpy.types.Operator):
                     tan=(tanx, tany, tanz),
                     texCoords=(texu, texv),
                     influences=VertInfluences(
-                        influences=(boneInfluences[0], boneInfluences[1], boneInfluences[2], boneInfluences[3]),
-                        weights=(boneWeights[0], boneWeights[1], boneWeights[2], boneWeights[3])
+                        influences=boneInfluences,
+                        weights=boneWeights
                     )
                 ))
+
+            numFaces = struct.unpack('<I', file.read(4))[0]
+            indices = list(struct.unpack(f"<{numFaces * 3}I", file.read(4 * numFaces * 3)))
+            faces = [indices[i:i+3] for i in range(0, len(indices), 3)]
+
+        return AnimModel(
+            vertices=vertices,
+            faces=faces
+        )
+
+    def __add_mesh(self, name: str, model: AnimModel):
+        positions = list(map(lambda v: v.pos, model.vertices))
+        mesh = bpy.data.meshes.new(name)
+        mesh.from_pydata(positions, [], model.faces)
+        mesh.update()
+
+        obj = bpy.data.objects.new(name, mesh)
+        bpy.context.collection.objects.link(obj)
+        bpy.context.view_layer.objects.active = obj
+        obj.select_set(True)
 
 classes = [MeshImportProperties, MESH_PT_SFJImporter, MESH_OT_ImportSFJ]
 
