@@ -45,7 +45,6 @@ class MESH_OT_ImportSFJ(bpy.types.Operator):
         props = context.scene.mesh_importer_props
         filepath = props.filepath
 
-        # Call your mesh loading logic here
         self.report({'INFO'}, f"Importing SFJ mesh from: {filepath}")
         self.__load_sfj_mesh(filepath)
         return {'FINISHED'}
@@ -88,6 +87,16 @@ class MESH_OT_ImportSFJ(bpy.types.Operator):
             numFaces = struct.unpack('<I', file.read(4))[0]
             indices = list(struct.unpack(f"<{numFaces * 3}I", file.read(4 * numFaces * 3)))
             faces = [indices[i:i+3] for i in range(0, len(indices), 3)]
+
+        positions = list(map(lambda v: v.pos, vertices))
+        mesh = bpy.data.meshes.new("SFJMesh")
+        mesh.from_pydata(positions, [], faces)
+        mesh.update()
+
+        obj = bpy.data.objects.new("SFJMesh", mesh)
+        bpy.context.collection.objects.link(obj)
+        bpy.context.view_layer.objects.active = obj
+        obj.select_set(True)
 
 classes = [MeshImportProperties, MESH_PT_SFJImporter, MESH_OT_ImportSFJ]
 
